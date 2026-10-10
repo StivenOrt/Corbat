@@ -3,3 +3,5 @@ faster-whisper
 sounddevice
 numpy
 pyttsx3
+ddgs
+piper-tts
