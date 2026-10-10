@@ -2,12 +2,14 @@ import collections
 import json
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
 
+import indicador
 from activacion import (
     BLOQUE,
     BLOQUES_PREVIOS,
@@ -23,6 +25,7 @@ MARGEN_FINAL = 0.2  # segundos extra para no cortar el final de la frase
 SALUDO = "Hola, soy Corbat. Dime oye Corbat para llamarme."
 
 _proceso = None
+_cerrojo = threading.Lock()
 
 
 def _rms(bloque):
@@ -53,18 +56,40 @@ def _leer_json(proceso):
 def _worker():
     global _proceso
 
-    if _proceso is None or _proceso.poll() is not None:
-        _proceso = subprocess.Popen(
-            [sys.executable, str(SCRIPT_VOZ)],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            bufsize=1,
-        )
-        _leer_json(_proceso)  # espera el mensaje de "listo"
+    with _cerrojo:
+        if _proceso is None or _proceso.poll() is not None:
+            _proceso = subprocess.Popen(
+                [sys.executable, str(SCRIPT_VOZ)],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                bufsize=1,
+            )
+            _leer_json(_proceso)  # espera el mensaje de "listo"
 
-    return _proceso
+        return _proceso
+
+
+def precargar_voz():
+    """Arranca el proceso de voz (tarda unos segundos) sin decir nada."""
+    _worker()
+
+
+def liberar_voz():
+    """Cierra el proceso de voz para liberar su memoria; se reabre al hablar."""
+    global _proceso
+
+    with _cerrojo:
+        proceso, _proceso = _proceso, None
+
+    if proceso is None or proceso.poll() is not None:
+        return
+    proceso.terminate()
+    try:
+        proceso.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        proceso.kill()
 
 
 def _decir(texto):
@@ -154,6 +179,14 @@ def _escuchar_interrupcion(fin, umbral_voz, umbral_interrupcion):
 
 
 def hablar(texto, umbral_voz=None, umbral_interrupcion=None):
+    indicador.estado("hablando")
+    try:
+        return _hablar(texto, umbral_voz, umbral_interrupcion)
+    finally:
+        indicador.estado("escuchando")
+
+
+def _hablar(texto, umbral_voz, umbral_interrupcion):
     """Dice el texto en voz alta.
 
     Sin umbrales, espera a que termine y devuelve None.

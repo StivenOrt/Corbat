@@ -96,24 +96,25 @@ def normalizar(texto):
 NOMBRE = "corbat"
 UMBRAL_NOMBRE = 0.8
 
-def _parece_nombre(palabra):
-    return difflib.SequenceMatcher(None, palabra, NOMBRE).ratio() >= UMBRAL_NOMBRE
+def _parece_nombre(palabra, umbral):
+    return difflib.SequenceMatcher(None, palabra, NOMBRE).ratio() >= umbral
 
 
-def extraer_comando(texto):
+def extraer_comando(texto, umbral=UMBRAL_NOMBRE):
     """Devuelve la orden que sigue al nombre del asistente, tal como se dijo.
 
     Devuelve None si no se dijo el nombre, o "" si se dijo solo.
+    Un umbral más bajo acepta nombres peor pronunciados o mal transcritos.
     """
     palabras = list(re.finditer(r"\w+", texto))
 
     for posicion, palabra in enumerate(palabras):
-        if not _parece_nombre(normalizar(palabra.group())):
+        if not _parece_nombre(normalizar(palabra.group()), umbral):
             continue
 
         siguiente = posicion + 1
         while siguiente < len(palabras) and _parece_nombre(
-            normalizar(palabras[siguiente].group())
+            normalizar(palabras[siguiente].group()), umbral
         ):
             siguiente += 1
 
