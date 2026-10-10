@@ -43,7 +43,7 @@ def _esperar_whatsapp() -> bool:
     while time.monotonic() < limite:
         if "whatsapp" in _ventana_activa().lower():
             return True
-        time.sleep(0.5)
+        time.sleep(0.25)
     return False
 
 

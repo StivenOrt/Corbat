@@ -32,6 +32,22 @@ MERCADO = "CO"  # solo canciones que se pueden reproducir en Colombia
 
 _cache = {}
 
+_cliente = None
+_cerrojo_cliente = threading.Lock()
+
+
+def _http():
+    """Cliente HTTP compartido: reutiliza la conexión segura en vez de abrir una por petición."""
+    global _cliente
+
+    with _cerrojo_cliente:
+        if _cliente is None:
+            _cliente = httpx.Client(
+                timeout=8,
+                limits=httpx.Limits(max_keepalive_connections=4, keepalive_expiry=60),
+            )
+        return _cliente
+
 
 class ErrorSpotify(Exception):
     def __init__(self, mensaje, estado=None):
@@ -117,7 +133,7 @@ def iniciar_sesion():
     if _Receptor.estado != estado:
         raise ErrorSpotify("La respuesta de Spotify no coincide con la solicitud.")
 
-    respuesta = httpx.post(
+    respuesta = _http().post(
         URL_TOKEN,
         data={
             "grant_type": "authorization_code",
@@ -151,7 +167,7 @@ def _cargar_token():
 
 def _renovar():
     token = _cargar_token()
-    respuesta = httpx.post(
+    respuesta = _http().post(
         URL_TOKEN,
         data={
             "grant_type": "refresh_token",
@@ -209,7 +225,7 @@ def _peticion(metodo, ruta, **kwargs):
     for intento in range(2):
         cabeceras = {"Authorization": f"Bearer {_token_acceso()}"}
         try:
-            respuesta = httpx.request(
+            respuesta = _http().request(
                 metodo, URL_API + ruta, headers=cabeceras, timeout=8, **kwargs
             )
         except httpx.HTTPError as error:
@@ -222,6 +238,7 @@ def _peticion(metodo, ruta, **kwargs):
         break
 
     if respuesta.status_code >= 400:
+        _dispositivo["valor"] = None  # lo que se sabía del dispositivo ya no es fiable
         logging.warning(
             "Spotify %s %s -> %s %s",
             metodo,
@@ -266,8 +283,24 @@ def buscar_pista(texto):
     return pistas[0] if pistas else None
 
 
-def _buscar_dispositivo():
-    """Devuelve el dispositivo (dict) que usará Corbat, o None si no hay ninguno."""
+_dispositivo = {"valor": None, "hora": 0.0}
+SEGUNDOS_CACHE_DISPOSITIVO = 30
+_playlists = {"datos": None, "hora": 0.0}
+SEGUNDOS_CACHE_PLAYLISTS = 600
+
+
+def _buscar_dispositivo(usar_cache=False):
+    """Devuelve el dispositivo (dict) que usará Corbat, o None si no hay ninguno.
+
+    Con usar_cache, si hace menos de 30 s que se consultó, se ahorra una petición.
+    """
+    if (
+        usar_cache
+        and _dispositivo["valor"] is not None
+        and time.monotonic() - _dispositivo["hora"] < SEGUNDOS_CACHE_DISPOSITIVO
+    ):
+        return _dispositivo["valor"]
+
     respuesta = _peticion("GET", "/me/player/devices")
     todos = respuesta.json().get("devices", [])
     logging.info(
@@ -295,16 +328,27 @@ def _buscar_dispositivo():
 
     if elegido is not None:
         logging.info("Dispositivo elegido: %s (%s)", elegido.get("name"), elegido.get("type"))
+    _dispositivo.update(valor=elegido, hora=time.monotonic())
     return elegido
 
 
 def _elegir_dispositivo():
-    dispositivo = _buscar_dispositivo()
+    dispositivo = _buscar_dispositivo(usar_cache=True)
     return dispositivo["id"] if dispositivo else None
 
 
+def precalentar():
+    """Abre la conexión con Spotify y localiza el dispositivo antes de que lo pidas."""
+    if not configurado():
+        return
+    try:
+        _buscar_dispositivo()
+    except ErrorSpotify:
+        pass
+
+
 def _esperar_dispositivo():
-    dispositivo = _buscar_dispositivo()
+    dispositivo = _buscar_dispositivo(usar_cache=True)
 
     if dispositivo is None:
         os.startfile("spotify:")  # abre la app y espera a que aparezca como dispositivo
@@ -352,7 +396,7 @@ def _esperar(condicion, segundos):
             return True
         if time.monotonic() >= limite:
             return False
-        time.sleep(0.5)
+        time.sleep(0.3)
 
 
 def _suena(uri, nombre, segundos):
@@ -371,6 +415,7 @@ def _suena_contexto(contexto, segundos):
 def _abrir_en_app(enlace):
     """Le da la orden directamente a la app de escritorio (despierta el dispositivo inactivo)."""
     logging.info("Abriendo en la app de Spotify: %s", enlace)
+    _dispositivo["valor"] = None  # la app cambia de estado: habrá que consultar de nuevo
     os.startfile(enlace)
 
 
@@ -503,6 +548,12 @@ def _exigir_permiso(permiso):
 def listar_playlists():
     """Devuelve [(uri, nombre), ...] con las playlists de tu biblioteca."""
     _exigir_permiso("playlist-read-private")
+    if (
+        _playlists["datos"] is not None
+        and time.monotonic() - _playlists["hora"] < SEGUNDOS_CACHE_PLAYLISTS
+    ):
+        return list(_playlists["datos"])
+
     encontradas = []
     for pagina in range(4):  # hasta 200 playlists
         datos = _peticion(
@@ -513,6 +564,7 @@ def listar_playlists():
                 encontradas.append((p["uri"], p["name"]))
         if not datos.get("next"):
             break
+    _playlists.update(datos=list(encontradas), hora=time.monotonic())
     return encontradas
 
 

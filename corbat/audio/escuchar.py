@@ -1,4 +1,5 @@
 import gc
+import os
 import threading
 
 from faster_whisper import WhisperModel
@@ -16,9 +17,12 @@ PROMPT = (
 )
 
 # Un segmento se descarta si Whisper duda de que haya voz o de lo que dijo.
-MAX_SIN_VOZ = 0.5
-MIN_CONFIANZA = -1.0
+MAX_SIN_VOZ = 0.6
+MIN_CONFIANZA = -1.2
 MAX_COMPRESION = 2.4
+
+# Hilos de CPU: núcleos físicos (los lógicos casi no ayudan con Whisper).
+HILOS = max(4, min(8, (os.cpu_count() or 8) // 2))
 
 _cerrojo = threading.Lock()
 _modelos = {}
@@ -27,7 +31,12 @@ _modelos = {}
 def _modelo(nombre):
     with _cerrojo:
         if nombre not in _modelos:
-            _modelos[nombre] = WhisperModel(nombre, device="cpu", compute_type="int8")
+            hilos = 2 if nombre == LIGERO else HILOS
+            ajustes = dict(device="cpu", compute_type="int8", cpu_threads=hilos)
+            try:  # ya descargado: no consulta internet (ahorra 1-2 s en cada carga)
+                _modelos[nombre] = WhisperModel(nombre, local_files_only=True, **ajustes)
+            except Exception:  # primera vez: lo descarga
+                _modelos[nombre] = WhisperModel(nombre, **ajustes)
         return _modelos[nombre]
 
 
@@ -47,6 +56,9 @@ def _texto(modelo, audio, prompt, **opciones):
     segmentos, _ = modelo.transcribe(
         audio,
         language="es",
+        beam_size=1,  # decodificación voraz: mucho más rápida y casi igual de precisa
+        temperature=0.0,  # sin reintentos con otras temperaturas (cada uno repite el trabajo)
+        without_timestamps=True,
         vad_filter=True,
         condition_on_previous_text=False,
         initial_prompt=prompt,
@@ -64,7 +76,7 @@ def _texto(modelo, audio, prompt, **opciones):
 
 def detectar(audio):
     """Transcripción rápida y ligera, solo para saber si dijeron 'Corbat'."""
-    return _texto(_modelo(LIGERO), audio, None, beam_size=1)
+    return _texto(_modelo(LIGERO), audio, None)
 
 
 def transcribir(audio):

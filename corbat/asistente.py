@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 import threading
+import time
 from datetime import datetime
 
 # Sin consola (pythonw) no hay salida estándar; se reemplaza para que nada falle.
@@ -17,6 +18,7 @@ from corbat.audio import confirmacion
 from corbat.audio import escuchar
 from corbat.contactos import google
 from corbat.interfaz import indicador
+from corbat.musica import spotify_api
 from corbat import registro  # noqa: F401
 from corbat.acciones.sistema import HERRAMIENTAS, cancelar_apagado
 from corbat.audio.activacion import calibrar_ruido, capturar_frase, extraer_comando, normalizar
@@ -24,10 +26,12 @@ from corbat.atajos import intentar_atajo
 from corbat.audio.hablar import calibrar_interrupcion, hablar, liberar_voz, precargar_voz
 
 MODELO = "qwen2.5:7b"
+# Respuestas cortas y deterministas: menos texto que generar y herramientas más fiables.
+OPCIONES_LLM = {"temperature": 0.2, "num_ctx": 4096, "num_predict": 256}
 MAX_RONDAS = 3
 MAX_TURNOS_HISTORIAL = 3
 ESPERA_ORDEN = 6  # segundos que espera la orden después de "Dime"
-REPOSO_SEGUNDOS = 10  # sin que nadie hable, Corbat se duerme
+REPOSO_SEGUNDOS = 120  # sin que nadie hable, Corbat se duerme
 UMBRAL_NOMBRE_REPOSO = 0.65  # el modelo ligero oye peor: se acepta un nombre más "borroso"
 SALIDAS = {"adios", "hasta luego", "salir", "cerrar asistente"}
 
@@ -46,6 +50,8 @@ def instrucciones():
         "Para cerrar una aplicación usa cerrar_aplicacion, y usa forzar solo si "
         "el usuario lo pide expresamente. "
         "Si una herramienta dice que no pudo hacer algo, díselo al usuario con honestidad. "
+        "Si el usuario pide un chiste, un dato curioso o algo que no sabes, usa "
+        "buscar_web de inmediato, sin pedir permiso antes. "
         "Si el usuario confirma una acción que propusiste, llama a la herramienta "
         "inmediatamente. Nunca digas que realizaste una acción si no llamaste "
         "a la herramienta correspondiente."
@@ -54,6 +60,56 @@ def instrucciones():
 
 historial = [{"role": "system", "content": instrucciones()}]
 llm_cargado = False
+
+
+# Mandar las 21 herramientas en cada orden alarga mucho la lectura del modelo.
+# Solo se envían las del tema de la orden; si no se reconoce ninguno, van todas.
+BASICAS = ("buscar_web", "obtener_fecha_hora")
+GRUPOS = (
+    (("musica", "cancion", "spotify", "reprodu", "playlist", "lista", "pausa", "siguiente",
+      "anterior", "suena", "toca", "pon "),
+     ("reproducir_musica", "reproducir_playlist", "reproducir_me_gusta", "pausar_musica",
+      "continuar_musica", "siguiente_cancion", "cancion_anterior", "cancion_actual")),
+    (("abre", "abrir", "cierra", "cerrar", "aplicacion", "programa", "app ", "inicia", "ejecuta"),
+     ("abrir_aplicacion", "cerrar_aplicacion")),
+    (("archivo", "carpeta", "documento", "pagina", "sitio", "web", "navegador", "link"),
+     ("abrir_pagina_web", "buscar_archivo", "abrir_archivo")),
+    (("volumen", "sonido", "silencia", "apaga", "computador", "equipo"),
+     ("subir_volumen", "bajar_volumen", "silenciar_volumen", "apagar_equipo")),
+    (("whatsapp", "mensaje", "llama", "escribe", "manda", "envia"),
+     ("enviar_whatsapp", "llamar_whatsapp")),
+    (("busca", "investiga", "noticia", "clima", "precio", "chiste", "dato", "quien", "que es",
+      "cuanto", "cuando", "donde", "internet", "hora", "fecha"),
+     ()),  # preguntas: bastan las básicas
+)
+
+
+def herramientas_para(texto):
+    limpio = normalizar(texto) + " "
+    nombres = []
+    reconocido = False
+    for palabras, grupo in GRUPOS:
+        if any(p in limpio for p in palabras):
+            reconocido = True
+            nombres.extend(grupo)
+    if not reconocido:  # p. ej. "sí, hazlo": se desconoce el tema, van todas
+        return list(HERRAMIENTAS.values())
+    nombres.extend(BASICAS)
+    return [HERRAMIENTAS[n] for n in dict.fromkeys(nombres) if n in HERRAMIENTAS]
+
+
+def _registrar_tiempos_llm(respuesta):
+    """Deja en el log dónde se fue el tiempo del modelo (carga, lectura, escritura)."""
+    def seg(campo):
+        return (getattr(respuesta, campo, None) or 0) / 1e9
+
+    logging.info(
+        "LLM: carga %.1fs | leyó %s tokens en %.1fs | escribió %s tokens en %.1fs | total %.1fs",
+        seg("load_duration"),
+        getattr(respuesta, "prompt_eval_count", "?"), seg("prompt_eval_duration"),
+        getattr(respuesta, "eval_count", "?"), seg("eval_duration"),
+        seg("total_duration"),
+    )
 
 
 def rol(mensaje):
@@ -95,15 +151,18 @@ def preguntar(texto):
     global llm_cargado
     llm_cargado = True
 
+    herramientas = herramientas_para(texto)
     mensaje = None
     for _ in range(MAX_RONDAS):
         respuesta = ollama.chat(
             model=MODELO,
             messages=historial,
-            tools=list(HERRAMIENTAS.values()),
+            tools=herramientas,
             keep_alive="5m",
+            options=OPCIONES_LLM,
         )
         mensaje = respuesta.message
+        _registrar_tiempos_llm(respuesta)
         historial.append(mensaje)
 
         if not mensaje.tool_calls:
@@ -142,8 +201,19 @@ def es_mensaje(comando):
 
 def despertar():
     """Carga los modelos pesados en segundo plano mientras sigues hablando."""
-    for tarea in (escuchar.precargar, precargar_voz):
+    for tarea in (escuchar.precargar, precargar_voz, spotify_api.precalentar, precalentar_llm):
         threading.Thread(target=tarea, daemon=True).start()
+
+
+def precalentar_llm():
+    """Sube el modelo de lenguaje a la GPU mientras dices la orden (evita ~15 s en frío)."""
+    global llm_cargado
+
+    llm_cargado = True
+    try:
+        ollama.generate(model=MODELO, prompt="", keep_alive="5m", options=OPCIONES_LLM)
+    except Exception as error:
+        logging.info("No se pudo precalentar el modelo de Ollama: %s", error)
 
 
 def dormir():
@@ -163,6 +233,7 @@ def dormir():
 
 
 def main():
+    logging.info("Corbat iniciado")
     aplicaciones.precargar()
     google.sincronizar_en_segundo_plano()
     print("Calibrando ruido ambiente... guarda silencio un momento.")
@@ -178,6 +249,7 @@ def main():
     print("Corbat en reposo. Di 'oye Corbat' seguido de tu orden. Ctrl+C para salir.")
     pendiente = None  # audio de una interrupción por voz, aún sin procesar
     activo = False  # False: reposo (solo escucha ligera); True: modelos cargados
+    seguimiento = False  # Corbat hizo una pregunta: la respuesta no necesita decir "Corbat"
     recien = False  # despertó el modelo ligero y falta que el preciso confirme el nombre
 
     try:
@@ -202,9 +274,14 @@ def main():
                 activo = True
                 recien = True
 
+            inicio = time.monotonic()
             texto = escuchar.transcribir(audio)
+            tiempo_texto = time.monotonic() - inicio
 
             comando = extraer_comando(texto) if texto else None
+            if comando is None and texto and seguimiento and not recien:
+                comando = texto.strip()  # respuesta a lo que Corbat acaba de preguntar
+            seguimiento = False
             if texto:
                 print(f"[Oí: {texto}]")
 
@@ -234,6 +311,7 @@ def main():
                 hablar("Hasta luego.")
                 break
 
+            inicio = time.monotonic()
             if es_cancelar_apagado(comando):
                 respuesta = cancelar_apagado()
             else:
@@ -245,10 +323,16 @@ def main():
                     logging.info("Ruta: atajo")
                     print("[Atajo]")
 
+            logging.info(
+                "Tiempos: transcribir %.1fs | responder %.1fs",
+                tiempo_texto,
+                time.monotonic() - inicio,
+            )
             print("Corbat:", respuesta)
             if not privado:
                 logging.info("Corbat: %s", respuesta)
             pendiente = hablar(respuesta, umbral, umbral_interrupcion)
+            seguimiento = respuesta.rstrip().endswith("?")
     except KeyboardInterrupt:
         print("\nCorbat cerrado.")
     except Exception:

@@ -2,12 +2,13 @@ import ctypes
 import logging
 import os
 import subprocess
+import threading
+import time
 import webbrowser
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-from ddgs import DDGS
 from corbat.audio.confirmacion import confirmar
 from corbat.acciones.mensajes import enviar_whatsapp, llamar_whatsapp
 from corbat.musica.reproductor import (
@@ -33,6 +34,9 @@ VK_VOLUMEN_BAJAR = 0xAE
 VK_VOLUMEN_SUBIR = 0xAF
 
 SEGUNDOS_APAGADO = 10
+SEGUNDOS_CACHE_BUSQUEDA = 120
+LIMITE_BUSQUEDA = 10  # segundos máximos esperando a internet
+_busquedas = {}
 
 
 def _resolver_aplicacion(nombre: str):
@@ -292,15 +296,38 @@ def buscar_web(consulta: str) -> str:
     Returns:
         Resumen de los resultados encontrados.
     """
-    try:
-        resultados = DDGS().text(consulta, max_results=4)
-    except Exception as error:
-        return f"No se pudo buscar en internet: {error}"
+    clave = consulta.strip().lower()
+    previa = _busquedas.get(clave)
+    if previa and time.monotonic() - previa[0] < SEGUNDOS_CACHE_BUSQUEDA:
+        return previa[1]
+
+    salida = {}
+
+    def buscar():
+        try:
+            from ddgs import DDGS
+
+            salida["resultados"] = DDGS(timeout=4).text(consulta, max_results=4)
+        except Exception as error:
+            salida["error"] = error
+
+    # Sin internet, ddgs prueba varios buscadores uno tras otro (hasta 40 s): se corta a los 10.
+    hilo = threading.Thread(target=buscar, daemon=True)
+    hilo.start()
+    hilo.join(LIMITE_BUSQUEDA)
+    if hilo.is_alive():
+        logging.info("buscar_web: sin respuesta en %s s", LIMITE_BUSQUEDA)
+        return "No se pudo buscar en internet: no hay respuesta, revisa la conexión."
+    if "error" in salida:
+        return f"No se pudo buscar en internet: {salida['error']}"
+    resultados = salida.get("resultados")
 
     if not resultados:
         return "No se encontraron resultados."
 
-    return "\n".join(f"{r['title']}: {r['body']}" for r in resultados)
+    texto = "\n".join(f"{r['title']}: {r['body']}" for r in resultados)
+    _busquedas[clave] = (time.monotonic(), texto)
+    return texto
 
 
 HERRAMIENTAS = {

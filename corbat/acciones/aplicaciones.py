@@ -208,8 +208,54 @@ def _procesos_con_ventana():
     ))
 
 
+def _procesos_con_ventana_rapido():
+    """Procesos con ventana visible, leídos directamente de Windows (sin lanzar PowerShell)."""
+    import ctypes
+    from ctypes import wintypes
+
+    import psutil
+
+    usuario = ctypes.windll.user32
+    titulos = {}
+    tipo_funcion = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+    usuario.IsWindowVisible.argtypes = [wintypes.HWND]
+    usuario.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+    usuario.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    usuario.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    usuario.EnumWindows.argtypes = [tipo_funcion, wintypes.LPARAM]
+
+    def revisar(ventana, _):
+        if usuario.IsWindowVisible(ventana):
+            largo = usuario.GetWindowTextLengthW(ventana)
+            if largo:
+                texto = ctypes.create_unicode_buffer(largo + 1)
+                usuario.GetWindowTextW(ventana, texto, largo + 1)
+                pid = wintypes.DWORD()
+                usuario.GetWindowThreadProcessId(ventana, ctypes.byref(pid))
+                titulos.setdefault(pid.value, texto.value)
+        return True
+
+    usuario.EnumWindows(tipo_funcion(revisar), 0)
+
+    procesos = []
+    for pid, titulo in titulos.items():
+        try:
+            nombre = Path(psutil.Process(pid).name()).stem
+        except psutil.Error:
+            continue
+        procesos.append({"Id": pid, "ProcessName": nombre, "MainWindowTitle": titulo})
+    return procesos
+
+
 def _ancestros():
     """PID de este programa y de los procesos que lo lanzaron (la terminal, VS Code...)."""
+    try:
+        import psutil
+
+        return {os.getpid()} | {p.pid for p in psutil.Process().parents()}
+    except Exception:  # sin psutil o sin permisos: se usa el método lento
+        pass
+
     try:
         salida = _powershell(
             f"$p={os.getpid()}; while($p){{ $p; "
@@ -243,13 +289,19 @@ def _procesos_de(nombre, appid, procesos):
 
 
 def cerrar(nombre, appid, forzar=False):
+    candidatos = []
     try:
-        procesos = _procesos_con_ventana()
-    except (subprocess.SubprocessError, OSError, ValueError) as error:
-        logging.warning("aplicaciones: no pude leer los procesos (%s)", error)
-        return f"No pude revisar si {nombre} está abierta."
+        candidatos = _procesos_de(nombre, appid, _procesos_con_ventana_rapido())
+    except Exception as error:  # sin psutil, o algo inesperado: se usa PowerShell
+        logging.info("aplicaciones: lectura rápida de procesos no disponible (%s)", error)
 
-    candidatos = _procesos_de(nombre, appid, procesos)
+    if not candidatos:  # respaldo, más lento pero más completo
+        try:
+            candidatos = _procesos_de(nombre, appid, _procesos_con_ventana())
+        except (subprocess.SubprocessError, OSError, ValueError) as error:
+            logging.warning("aplicaciones: no pude leer los procesos (%s)", error)
+            return f"No pude revisar si {nombre} está abierta."
+
     if not candidatos:
         return f"No encontré {nombre} abierta."
 

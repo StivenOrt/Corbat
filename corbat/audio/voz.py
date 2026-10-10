@@ -1,5 +1,7 @@
+import hashlib
 import json
 import os
+import shutil
 import sys
 import tempfile
 import wave
@@ -9,6 +11,11 @@ from corbat import rutas
 
 MODELO = rutas.VOCES / "es_MX-claude-high.onnx"
 CARPETA = tempfile.gettempdir()
+
+VELOCIDAD = 0.92  # length_scale de Piper: menos de 1 habla un poco más rápido
+CACHE = rutas.DATOS / "cache_voz"  # frases ya sintetizadas: la segunda vez suenan al instante
+MAX_CARACTERES_CACHE = 80
+MAX_ARCHIVOS_CACHE = 300
 
 
 def enviar(mensaje):
@@ -22,9 +29,23 @@ def cargar_motor():
             from piper import PiperVoice
 
             voz = PiperVoice.load(str(MODELO))
+            ajustes = {"usar": True}
+
+            try:
+                from piper import SynthesisConfig
+
+                configuracion = SynthesisConfig(length_scale=VELOCIDAD)
+            except (ImportError, TypeError):
+                configuracion = None
 
             def sintetizar(texto, ruta):
                 with wave.open(ruta, "wb") as archivo:
+                    if configuracion is not None and ajustes["usar"]:
+                        try:
+                            voz.synthesize_wav(texto, archivo, syn_config=configuracion)
+                            return
+                        except TypeError:  # versión de Piper sin ese parámetro
+                            ajustes["usar"] = False
                     voz.synthesize_wav(texto, archivo)
 
             return sintetizar
@@ -49,6 +70,24 @@ def cargar_motor():
         motor.runAndWait()
 
     return sintetizar
+
+
+def ruta_en_cache(texto):
+    clave = hashlib.sha1(f"{MODELO.name}|{VELOCIDAD}|{texto}".encode("utf-8")).hexdigest()
+    return CACHE / f"{clave}.wav"
+
+
+def guardar_en_cache(origen, destino):
+    try:
+        CACHE.mkdir(parents=True, exist_ok=True)
+        archivos = sorted(CACHE.glob("*.wav"), key=lambda a: a.stat().st_mtime)
+        for viejo in archivos[: max(0, len(archivos) - MAX_ARCHIVOS_CACHE + 1)]:
+            viejo.unlink(missing_ok=True)
+        parcial = destino.with_suffix(".parte")
+        shutil.copyfile(origen, parcial)
+        os.replace(parcial, destino)
+    except OSError:
+        pass  # la caché es solo una ayuda: si falla, se habla igual
 
 
 def duracion_wav(ruta):
@@ -89,12 +128,18 @@ def main():
             enviar({"duracion": 0})
             continue
 
-        # Se alternan dos archivos para no pisar el que aún está sonando.
-        ruta = os.path.join(CARPETA, f"corbat_voz_{indice}.wav")
-        indice = 1 - indice
+        en_cache = ruta_en_cache(texto)
 
         try:
-            sintetizar(texto, ruta)
+            if en_cache.exists():
+                ruta = str(en_cache)
+            else:
+                # Se alternan dos archivos para no pisar el que aún está sonando.
+                ruta = os.path.join(CARPETA, f"corbat_voz_{indice}.wav")
+                indice = 1 - indice
+                sintetizar(texto, ruta)
+                if len(texto) <= MAX_CARACTERES_CACHE:
+                    guardar_en_cache(ruta, en_cache)
             duracion = duracion_wav(ruta)
             winsound.PlaySound(ruta, winsound.SND_FILENAME | winsound.SND_ASYNC)
         except Exception as error:

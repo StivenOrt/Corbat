@@ -6,18 +6,11 @@ import threading
 import time
 
 import numpy as np
-import sounddevice as sd
 
 from corbat import rutas
+from corbat.audio import microfono
+from corbat.audio.activacion import BLOQUES_PREVIOS, MAX_SEGUNDOS, SILENCIO_FINAL
 from corbat.interfaz import indicador
-from corbat.audio.activacion import (
-    BLOQUE,
-    BLOQUES_PREVIOS,
-    DISPOSITIVO,
-    FRECUENCIA,
-    MAX_SEGUNDOS,
-    SILENCIO_FINAL,
-)
 
 BLOQUES_PARA_INTERRUMPIR = 3  # 0.3 segundos seguidos por encima del umbral
 MARGEN_FINAL = 0.2  # segundos extra para no cortar el final de la frase
@@ -119,19 +112,14 @@ def calibrar_interrupcion(umbral_voz):
         print("[No se pudo iniciar la voz]")
         return max(umbral_voz * 3, 0.03)
 
+    microfono.vaciar()
     fin = time.monotonic() + duracion + MARGEN_FINAL
     niveles = []
 
-    with sd.InputStream(
-        samplerate=FRECUENCIA,
-        channels=1,
-        dtype="float32",
-        blocksize=BLOQUE,
-        device=DISPOSITIVO,
-    ) as flujo:
-        while time.monotonic() < fin:
-            datos, _ = flujo.read(BLOQUE)
-            niveles.append(_rms(datos.flatten()))
+    while time.monotonic() < fin:
+        bloque = microfono.leer()
+        if bloque is not None:
+            niveles.append(_rms(bloque))
 
     eco = float(np.percentile(niveles, 95)) if niveles else 0.0
     umbral = max(eco * 1.8, umbral_voz * 2)
@@ -146,36 +134,30 @@ def _escuchar_interrupcion(fin, umbral_voz, umbral_interrupcion):
     silencio = 0
     interrumpido = False
 
-    with sd.InputStream(
-        samplerate=FRECUENCIA,
-        channels=1,
-        dtype="float32",
-        blocksize=BLOQUE,
-        device=DISPOSITIVO,
-    ) as flujo:
-        while True:
-            if not interrumpido and time.monotonic() >= fin:
-                return None
+    while True:
+        if not interrumpido and time.monotonic() >= fin:
+            return None
 
-            datos, _ = flujo.read(BLOQUE)
-            bloque = datos.flatten()
-            nivel = _rms(bloque)
+        bloque = microfono.leer(0.2)
+        if bloque is None:
+            continue
+        nivel = _rms(bloque)
 
-            if not interrumpido:
-                previos.append(bloque)
-                seguidos = seguidos + 1 if nivel >= umbral_interrupcion else 0
-                if seguidos >= BLOQUES_PARA_INTERRUMPIR:
-                    interrumpido = True
-                    _parar()
-                    grabados = list(previos)
-                    silencio = 0
-                continue
+        if not interrumpido:
+            previos.append(bloque)
+            seguidos = seguidos + 1 if nivel >= umbral_interrupcion else 0
+            if seguidos >= BLOQUES_PARA_INTERRUMPIR:
+                interrumpido = True
+                _parar()
+                grabados = list(previos)
+                silencio = 0
+            continue
 
-            grabados.append(bloque)
-            silencio = silencio + 1 if nivel < umbral_voz else 0
+        grabados.append(bloque)
+        silencio = silencio + 1 if nivel < umbral_voz else 0
 
-            if silencio * 0.1 >= SILENCIO_FINAL or len(grabados) * 0.1 >= MAX_SEGUNDOS:
-                return np.concatenate(grabados)
+        if silencio * 0.1 >= SILENCIO_FINAL or len(grabados) * 0.1 >= MAX_SEGUNDOS:
+            return np.concatenate(grabados)
 
 
 def hablar(texto, umbral_voz=None, umbral_interrupcion=None):
@@ -198,11 +180,13 @@ def _hablar(texto, umbral_voz, umbral_interrupcion):
         return None
 
     fin = time.monotonic() + duracion + MARGEN_FINAL
+    microfono.vaciar()  # lo que se oyó mientras Corbat pensaba ya no sirve
 
     if umbral_interrupcion is None:
         restante = fin - time.monotonic()
         if restante > 0:
             time.sleep(restante)
+        microfono.vaciar()  # así no se "oye" a sí mismo
         return None
 
     try:

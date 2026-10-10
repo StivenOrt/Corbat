@@ -31,6 +31,10 @@ def configurar():
     consola.addFilter(lambda registro: registro.name == "root")
     raiz.addHandler(consola)
 
+    # Estas librerías escriben una línea por cada frase o petición: solo estorban.
+    for nombre in ("faster_whisper", "httpx", "httpcore"):
+        logging.getLogger(nombre).setLevel(logging.WARNING)
+
     raiz._corbat_configurado = True
 
 

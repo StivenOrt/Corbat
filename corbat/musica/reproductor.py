@@ -7,8 +7,6 @@ import subprocess
 import time
 import unicodedata
 
-from ddgs import DDGS
-
 from corbat import registro  # noqa: F401
 from corbat.musica import spotify_api
 
@@ -161,6 +159,8 @@ def _estado():
 def _buscar_cancion_web(busqueda: str):
     consulta = f"site:open.spotify.com/track {busqueda}"
     try:
+        from ddgs import DDGS
+
         resultados = DDGS().text(consulta, max_results=8)
     except Exception as error:
         logging.warning("reproducir_musica: búsqueda web falló (%s)", error)

@@ -90,6 +90,6 @@ corbat/
 
 - **Se activa con ruidos:** revisa `datos/acciones.log` y ajusta `UMBRAL_NOMBRE_REPOSO` en
   `corbat/asistente.py`.
-- **No oye bien:** cambia `DISPOSITIVO` en `corbat/audio/activacion.py` por el número de tu micrófono.
+- **No oye bien:** cambia `DISPOSITIVO` en `corbat/audio/microfono.py` por el número de tu micrófono.
 - **Tarda al despertar:** es normal la primera vez tras el reposo, porque carga los modelos.
 - **No arranca sin consola:** ejecuta `scripts\iniciar_corbat.bat` para ver el error.

@@ -120,11 +120,38 @@ PATRON_LLAMAR = re.compile(
 )
 
 
+PREAMBULO = re.compile(
+    r"^(?:(?:oye|mira|ey|hey)\s+)?"
+    r"(?:(?:necesito|quisiera|te\s+pido|quiero)\s+que\s+|(?:necesito|quisiera)\s+|"
+    r"(?:me\s+)?(?:puedes|podrias|puede|podria)\s+|me\s+gustaria\s+que\s+|ayudame\s+a\s+)?"
+    r"(?:me\s+)?"
+)
+# "que cierres Spotify", "me pones Sierra": se llevan al imperativo que entienden los patrones.
+IMPERATIVO = {
+    "cierres": "cierra", "cierras": "cierra", "cierre": "cierra",
+    "abras": "abre", "abres": "abre", "abra": "abre",
+    "pongas": "pon", "pones": "pon", "poner": "pon",
+    "reproduzcas": "reproduce", "reproduces": "reproduce",
+    "toques": "toca", "tocas": "toca",
+    "pauses": "pausa", "pausas": "pausa",
+    "subas": "sube", "subes": "sube", "bajes": "baja", "bajas": "baja",
+    "silencies": "silencia", "silencias": "silencia",
+    "llames": "llama", "llamas": "llama",
+    "apagues": "apaga", "apagas": "apaga",
+    "busques": "busca", "buscas": "busca",
+    "inicies": "inicia", "ejecutes": "ejecuta", "lances": "lanza",
+}
+PATRON_SOLO_SPOTIFY = re.compile(r"^(.+?)\s+(?:en\s+|por\s+|de\s+|con\s+)?spotify$")
+
+
 def _limpiar(comando):
     limpio = normalizar(comando)
     limpio = re.sub(r"\b(?:por favor|porfa|ahora|ya)\b", " ", limpio)
-    limpio = re.sub(r"^(?:me\s+)?(?:puedes|podrias)\s+", "", limpio)
-    return re.sub(r"\s+", " ", limpio).strip()
+    limpio = re.sub(r"\s+", " ", limpio).strip()
+    limpio = PREAMBULO.sub("", limpio)
+    primera, _, resto = limpio.partition(" ")
+    limpio = f"{IMPERATIVO.get(primera, primera)} {resto}".strip()
+    return limpio
 
 
 def _consulta_musica(texto):
@@ -239,5 +266,12 @@ def intentar_atajo(comando):
         if _resolver_aplicacion(nombre):
             return abrir_aplicacion(nombre)
         return None
+
+    # "Sierra, Spotify" / "Sierra en Spotify": sin verbo, se entiende como pedir la canción.
+    coincidencia = PATRON_SOLO_SPOTIFY.match(limpio)
+    if coincidencia:
+        consulta = _consulta_musica(re.sub(r"^(?:en|a|de|el|la)\s+", "", coincidencia.group(1)))
+        if consulta and consulta.split()[0] not in {"abre", "cierra", "inicia", "ejecuta", "lanza"}:
+            return reproducir_musica(consulta)
 
     return None

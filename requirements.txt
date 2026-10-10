@@ -6,3 +6,4 @@ pyttsx3
 ddgs
 piper-tts
 httpx
+psutil
