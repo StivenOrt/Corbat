@@ -1,5 +1,4 @@
 import ctypes
-import difflib
 import logging
 import os
 import subprocess
@@ -9,7 +8,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from ddgs import DDGS
-from mensajes import enviar_whatsapp
+from confirmacion import confirmar
+from mensajes import enviar_whatsapp, llamar_whatsapp
 from musica import (
     cancion_actual,
     cancion_anterior,
@@ -21,51 +21,8 @@ from musica import (
     siguiente_cancion,
 )
 
+import aplicaciones
 import registro  # noqa: F401  (configura acciones.log y los avisos en consola)
-
-# Solo estas aplicaciones se pueden abrir. Agrega las tuyas aquí.
-APLICACIONES = {
-    "bloc de notas": "notepad",
-    "calculadora": "calc",
-    "explorador": "explorer",
-    "paint": "mspaint",
-    "terminal": "wt",
-    "visual studio code": "code",
-    "brave": "brave",
-    "spotify": "spotify:",
-    "whatsapp": "whatsapp:",
-    "discord": "discord:",
-    "mysql workbench": r"C:\Program Files\MySQL\MySQL Workbench 8.0\MySQLWorkbench.exe",
-    "steam": "steam:",
-}
-
-ALIAS_APLICACIONES = {
-    "blog de notas": "bloc de notas",
-    "block de notas": "bloc de notas",
-    "notepad": "bloc de notas",
-    "bloc": "bloc de notas",
-    "vs code": "visual studio code",
-    "vscode": "visual studio code",
-    "visual studio": "visual studio code",
-    "navegador": "brave",
-    "brave browser": "brave",
-    "google chrome": "brave",
-    "explorador de archivos": "explorador",
-    "powershell": "terminal",
-}
-
-PROCESOS = {
-    "bloc de notas": ["notepad.exe"],
-    "calculadora": ["CalculatorApp.exe", "Calculator.exe"],
-    "paint": ["mspaint.exe", "PaintStudio.View.exe"],
-    "visual studio code": ["Code.exe"],
-    "brave": ["brave.exe"],
-    "spotify": ["Spotify.exe"],
-    "whatsapp": ["WhatsApp.exe", "WhatsApp.Root.exe"],
-    "discord": ["Discord.exe"],
-    "mysql workbench": ["MySQLWorkbench.exe"],
-    "steam": ["steam.exe"],
-}
 
 EXTENSIONES_PROHIBIDAS = {
     ".exe", ".bat", ".cmd", ".ps1", ".msi", ".vbs", ".js", ".lnk", ".scr", ".com",
@@ -79,35 +36,10 @@ SEGUNDOS_APAGADO = 10
 
 
 def _resolver_aplicacion(nombre: str):
-    clave = nombre.strip().lower()
-    clave = ALIAS_APLICACIONES.get(clave, clave)
+    """Nombre de la aplicación instalada que corresponde a lo dicho, o None."""
+    app = aplicaciones.buscar_app(nombre)
+    return app[0] if app else None
 
-    if clave in APLICACIONES:
-        return clave
-
-    parecidos = difflib.get_close_matches(clave, APLICACIONES.keys(), n=1, cutoff=0.7)
-    if parecidos:
-        return parecidos[0]
-
-    if clave:
-        for nombre_app in APLICACIONES:
-            if nombre_app in clave or clave in nombre_app:
-                return nombre_app
-
-    return None
-
-EXTENSIONES_PROHIBIDAS = {
-    ".exe", ".bat", ".cmd", ".ps1", ".msi", ".vbs", ".js", ".lnk", ".scr", ".com",
-}
-
-VK_VOLUMEN_SILENCIO = 0xAD
-VK_VOLUMEN_BAJAR = 0xAE
-VK_VOLUMEN_SUBIR = 0xAF
-
-
-def confirmar(descripcion: str) -> bool:
-    respuesta = input(f"\n[Confirmación] {descripcion} ¿Confirmas? (s/n): ")
-    return respuesta.strip().lower() in ("s", "si", "sí")
 
 
 def _carpetas_usuario() -> list[Path]:
@@ -139,26 +71,31 @@ def obtener_fecha_hora() -> str:
 
 
 def abrir_aplicacion(nombre: str) -> str:
-    """Abre una aplicación de la lista permitida.
+    """Abre una aplicación instalada en el computador.
 
     Args:
-        nombre: Nombre de la aplicación, por ejemplo bloc de notas, calculadora o chrome.
+        nombre: Nombre de la aplicación, por ejemplo bloc de notas, calculadora, spotify o word.
 
     Returns:
         Resultado de la acción.
     """
-    clave = _resolver_aplicacion(nombre)
+    app = aplicaciones.buscar_app(nombre)
 
-    if clave is None:
-        disponibles = ", ".join(APLICACIONES)
-        return f"No tengo permiso para abrir '{nombre}'. Puedo abrir: {disponibles}."
+    if app is None:
+        return f"No encontré ninguna aplicación instalada llamada '{nombre}'."
 
-    subprocess.Popen(f'start "" "{APLICACIONES[clave]}"', shell=True)
-    logging.info("abrir_aplicacion: %s", clave)
-    return f"Se abrió {clave}."
+    try:
+        aplicaciones.abrir(*app)
+    except OSError as error:
+        logging.warning("abrir_aplicacion: no se pudo abrir %s (%s)", app[0], error)
+        return f"No pude abrir {app[0]}."
+
+    logging.info("abrir_aplicacion: %s", app[0])
+    return f"Se abrió {app[0]}."
+
 
 def cerrar_aplicacion(nombre: str, forzar: bool = False) -> str:
-    """Cierra una aplicación de la lista permitida.
+    """Cierra una aplicación que está abierta.
 
     Args:
         nombre: Nombre de la aplicación, por ejemplo bloc de notas, spotify o brave.
@@ -167,36 +104,21 @@ def cerrar_aplicacion(nombre: str, forzar: bool = False) -> str:
     Returns:
         Resultado de la acción.
     """
-    clave = _resolver_aplicacion(nombre)
+    app = aplicaciones.buscar_app(nombre)
 
-    if clave is None or clave not in PROCESOS:
-        permitidas = ", ".join(PROCESOS)
-        return f"No tengo permiso para cerrar '{nombre}'. Puedo cerrar: {permitidas}."
+    if app is None:
+        return f"No encontré ninguna aplicación instalada llamada '{nombre}'."
 
     if forzar and not confirmar(
-        f"Corbat quiere FORZAR el cierre de {clave}. Se puede perder trabajo sin guardar."
+        f"Corbat quiere FORZAR el cierre de {app[0]}. Se puede perder trabajo sin guardar."
     ):
-        logging.info("cerrar_aplicacion: forzado cancelado por el usuario (%s)", clave)
+        logging.info("cerrar_aplicacion: forzado cancelado por el usuario (%s)", app[0])
         return "El usuario no confirmó. No se cerró la aplicación."
 
-    cerrado = False
-    for proceso in PROCESOS[clave]:
-        comando = ["taskkill", "/IM", proceso]
-        if forzar:
-            comando.append("/F")
-        resultado = subprocess.run(comando, capture_output=True)
-        if resultado.returncode == 0:
-            cerrado = True
+    resultado = aplicaciones.cerrar(*app, forzar=forzar)
+    logging.info("cerrar_aplicacion: %s (forzar=%s) -> %s", app[0], forzar, resultado)
+    return resultado
 
-    if not cerrado:
-        logging.info("cerrar_aplicacion: sin efecto (%s, forzar=%s)", clave, forzar)
-        return (
-            f"No se pudo cerrar {clave}. Puede que no esté abierta "
-            "o que necesite un cierre forzado."
-        )
-
-    logging.info("cerrar_aplicacion: %s (forzar=%s)", clave, forzar)
-    return f"Se envió la orden de cierre a {clave}."
 
 def abrir_pagina_web(url: str) -> str:
     """Abre una página web en el navegador predeterminado.
@@ -404,5 +326,6 @@ HERRAMIENTAS = {
         cancion_anterior,
         cancion_actual,
         enviar_whatsapp,
+        llamar_whatsapp,
     )
 }

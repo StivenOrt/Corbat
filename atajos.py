@@ -11,7 +11,7 @@ from acciones import (
     subir_volumen,
 )
 from activacion import normalizar
-from mensajes import enviar_whatsapp
+from mensajes import enviar_whatsapp, llamar_whatsapp
 from musica import (
     cancion_actual,
     cancion_anterior,
@@ -107,6 +107,18 @@ PATRON_WHATSAPP = re.compile(
     r"(?P<mensaje>.+)$"
 )
 
+# Llamadas: "llama a Mario por whatsapp", "hazle una videollamada a mamá"
+PATRON_VIDEOLLAMADA = re.compile(
+    r"^(?:(?:haz|hazle|hacer)\s+(?:una\s+)?)?(?:videollamada|video\s+llamada)\s+(?:a|con)\s+"
+    r"(?:mi\s+)?(?P<contacto>.+?)(?:\s+por\s+whatsapp)?$"
+    r"|^(?:llama|llamale|llamar)\s+(?:a\s+)?(?:mi\s+)?(?P<contacto2>.+?)\s+(?:por\s+)?"
+    r"(?:video|videollamada)(?:\s+por\s+whatsapp)?$"
+)
+PATRON_LLAMAR = re.compile(
+    r"^(?:llama|llamale|llamar|marca|marcale)\s+(?:a\s+)?(?:mi\s+)?"
+    r"(?P<contacto>.+?)(?:\s+por\s+whatsapp)?$"
+)
+
 
 def _limpiar(comando):
     limpio = normalizar(comando)
@@ -156,6 +168,14 @@ def intentar_atajo(comando):
     limpio = _limpiar(comando)
     if not limpio:
         return None
+
+    coincidencia = PATRON_VIDEOLLAMADA.match(limpio)
+    if coincidencia:
+        return llamar_whatsapp(coincidencia.group("contacto") or coincidencia.group("contacto2"), video=True)
+
+    coincidencia = PATRON_LLAMAR.match(limpio)
+    if coincidencia:
+        return llamar_whatsapp(coincidencia.group("contacto"))
 
     if PATRON_HORA.match(limpio):
         return decir_fecha_hora()
