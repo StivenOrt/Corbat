@@ -1,6 +1,8 @@
 import collections
+import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -17,23 +19,68 @@ from activacion import (
 
 SCRIPT_VOZ = Path(__file__).with_name("voz.py")
 BLOQUES_PARA_INTERRUMPIR = 3  # 0.3 segundos seguidos por encima del umbral
+MARGEN_FINAL = 0.2  # segundos extra para no cortar el final de la frase
 SALUDO = "Hola, soy Corbat. Dime oye Corbat para llamarme."
+
+_proceso = None
 
 
 def _rms(bloque):
     return float(np.sqrt(np.mean(np.square(bloque))))
 
 
-def _iniciar_voz(texto):
-    proceso = subprocess.Popen(
-        [sys.executable, str(SCRIPT_VOZ)],
-        stdin=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-    )
-    proceso.stdin.write(texto)
-    proceso.stdin.close()
-    return proceso
+def _enviar(proceso, orden):
+    try:
+        proceso.stdin.write(json.dumps(orden) + "\n")
+        proceso.stdin.flush()
+    except (BrokenPipeError, OSError):
+        pass
+
+
+def _leer_json(proceso):
+    while True:
+        linea = proceso.stdout.readline()
+        if not linea:
+            return None
+        try:
+            datos = json.loads(linea)
+        except ValueError:
+            continue
+        if isinstance(datos, dict):
+            return datos
+
+
+def _worker():
+    global _proceso
+
+    if _proceso is None or _proceso.poll() is not None:
+        _proceso = subprocess.Popen(
+            [sys.executable, str(SCRIPT_VOZ)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            bufsize=1,
+        )
+        _leer_json(_proceso)  # espera el mensaje de "listo"
+
+    return _proceso
+
+
+def _decir(texto):
+    """Pide al proceso de voz que hable. Devuelve la duración en segundos."""
+    proceso = _worker()
+    _enviar(proceso, {"cmd": "hablar", "texto": texto})
+    respuesta = _leer_json(proceso)
+
+    if not respuesta or "duracion" not in respuesta:
+        return None
+    return float(respuesta["duracion"])
+
+
+def _parar():
+    if _proceso is not None and _proceso.poll() is None:
+        _enviar(_proceso, {"cmd": "parar"})
 
 
 def calibrar_interrupcion(umbral_voz):
@@ -41,7 +88,13 @@ def calibrar_interrupcion(umbral_voz):
 
     Devuelve el umbral que debe superar tu voz para interrumpirlo.
     """
-    proceso = _iniciar_voz(SALUDO)
+    duracion = _decir(SALUDO)
+
+    if duracion is None:
+        print("[No se pudo iniciar la voz]")
+        return max(umbral_voz * 3, 0.03)
+
+    fin = time.monotonic() + duracion + MARGEN_FINAL
     niveles = []
 
     with sd.InputStream(
@@ -51,11 +104,9 @@ def calibrar_interrupcion(umbral_voz):
         blocksize=BLOQUE,
         device=DISPOSITIVO,
     ) as flujo:
-        while proceso.poll() is None:
+        while time.monotonic() < fin:
             datos, _ = flujo.read(BLOQUE)
             niveles.append(_rms(datos.flatten()))
-
-    proceso.wait()
 
     eco = float(np.percentile(niveles, 95)) if niveles else 0.0
     umbral = max(eco * 1.8, umbral_voz * 2)
@@ -63,7 +114,7 @@ def calibrar_interrupcion(umbral_voz):
     return umbral
 
 
-def _escuchar_interrupcion(proceso, umbral_voz, umbral_interrupcion):
+def _escuchar_interrupcion(fin, umbral_voz, umbral_interrupcion):
     previos = collections.deque(maxlen=BLOQUES_PREVIOS + BLOQUES_PARA_INTERRUMPIR)
     grabados = []
     seguidos = 0
@@ -78,7 +129,7 @@ def _escuchar_interrupcion(proceso, umbral_voz, umbral_interrupcion):
         device=DISPOSITIVO,
     ) as flujo:
         while True:
-            if not interrumpido and proceso.poll() is not None:
+            if not interrumpido and time.monotonic() >= fin:
                 return None
 
             datos, _ = flujo.read(BLOQUE)
@@ -90,7 +141,7 @@ def _escuchar_interrupcion(proceso, umbral_voz, umbral_interrupcion):
                 seguidos = seguidos + 1 if nivel >= umbral_interrupcion else 0
                 if seguidos >= BLOQUES_PARA_INTERRUMPIR:
                     interrumpido = True
-                    proceso.kill()
+                    _parar()
                     grabados = list(previos)
                     silencio = 0
                 continue
@@ -109,14 +160,19 @@ def hablar(texto, umbral_voz=None, umbral_interrupcion=None):
     Con umbrales, vigila el micrófono: si lo interrumpes, se calla y devuelve
     el audio de lo que dijiste. Si termina sin interrupción, devuelve None.
     """
-    proceso = _iniciar_voz(texto)
+    duracion = _decir(texto)
+    if duracion is None:
+        return None
+
+    fin = time.monotonic() + duracion + MARGEN_FINAL
+
+    if umbral_interrupcion is None:
+        restante = fin - time.monotonic()
+        if restante > 0:
+            time.sleep(restante)
+        return None
 
     try:
-        if umbral_interrupcion is None:
-            proceso.wait()
-            return None
-        return _escuchar_interrupcion(proceso, umbral_voz, umbral_interrupcion)
+        return _escuchar_interrupcion(fin, umbral_voz, umbral_interrupcion)
     finally:
-        if proceso.poll() is None:
-            proceso.kill()
-        proceso.wait()
+        _parar()

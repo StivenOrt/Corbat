@@ -101,20 +101,25 @@ def _parece_nombre(palabra):
 
 
 def extraer_comando(texto):
-    """Devuelve la orden que sigue al nombre del asistente.
+    """Devuelve la orden que sigue al nombre del asistente, tal como se dijo.
 
     Devuelve None si no se dijo el nombre, o "" si se dijo solo.
     """
-    palabras = normalizar(texto).split()
+    palabras = list(re.finditer(r"\w+", texto))
 
     for posicion, palabra in enumerate(palabras):
-        if not _parece_nombre(palabra):
+        if not _parece_nombre(normalizar(palabra.group())):
             continue
 
         siguiente = posicion + 1
-        while siguiente < len(palabras) and _parece_nombre(palabras[siguiente]):
+        while siguiente < len(palabras) and _parece_nombre(
+            normalizar(palabras[siguiente].group())
+        ):
             siguiente += 1
 
-        return " ".join(palabras[siguiente:])
+        if siguiente >= len(palabras):
+            return ""
+
+        return texto[palabras[siguiente].start():].strip()
 
     return None

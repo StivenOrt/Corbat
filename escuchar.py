@@ -30,7 +30,9 @@ def transcribir(audio):
             "Oye Corbat, abre el bloc de notas. Oye Corbat, cierra Spotify. "
             "Oye Corbat, busca el archivo prueba. Oye Corbat, sube el volumen. "
             "Oye Corbat, ¿qué hora es? Brave, Discord, WhatsApp, Steam, "
-            "MySQL Workbench, Visual Studio Code."
+            "MySQL Workbench, Visual Studio Code. "
+            "Oye Corbat, reproduce algo de Kris R. Reproduce Bobadita en Spotify. "
+            "Pon Virtual Diva de Don Omar."
         ),
     )
     return " ".join(segmento.text.strip() for segmento in segmentos)

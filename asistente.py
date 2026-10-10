@@ -1,7 +1,9 @@
+import logging
 from datetime import datetime
 
 import ollama
 
+import registro  # noqa: F401
 from acciones import HERRAMIENTAS, cancelar_apagado
 from activacion import calibrar_ruido, capturar_frase, extraer_comando, normalizar
 from atajos import intentar_atajo
@@ -64,6 +66,8 @@ def ejecutar_herramienta(llamada):
         resultado = f"Error al ejecutar {nombre}: {error}"
 
     print(f"[Resultado: {resultado}]")
+    visibles = {k: v for k, v in dict(argumentos).items() if k != "mensaje"}
+    logging.info("Herramienta (modelo): %s %s -> %s", nombre, visibles, resultado)
     return resultado
 
 
@@ -78,6 +82,7 @@ def preguntar(texto):
             model=MODELO,
             messages=historial,
             tools=list(HERRAMIENTAS.values()),
+            keep_alive="1h",
         )
         mensaje = respuesta.message
         historial.append(mensaje)
@@ -108,6 +113,12 @@ def esperar_orden(umbral):
 def es_cancelar_apagado(comando):
     limpio = normalizar(comando)
     return "cancel" in limpio and "apag" in limpio
+
+
+def es_mensaje(comando):
+    """Los mensajes (WhatsApp) no se guardan en el log."""
+    primera = normalizar(comando).split(" ", 1)[0]
+    return primera in {"manda", "mandale", "envia", "enviale", "escribe", "escribele"}
 
 
 def main():
@@ -147,6 +158,8 @@ def main():
                 print(f"[Oí: {comando}]")
 
             print("Tú:", comando)
+            privado = es_mensaje(comando)
+            logging.info("Orden: %s", "(mensaje, texto omitido)" if privado else comando)
 
             if normalizar(comando) in SALIDAS:
                 hablar("Hasta luego.")
@@ -157,11 +170,15 @@ def main():
             else:
                 respuesta = intentar_atajo(comando)
                 if respuesta is None:
+                    logging.info("Ruta: modelo")
                     respuesta = preguntar(comando)
                 else:
+                    logging.info("Ruta: atajo")
                     print("[Atajo]")
 
             print("Corbat:", respuesta)
+            if not privado:
+                logging.info("Corbat: %s", respuesta)
             pendiente = hablar(respuesta, umbral, umbral_interrupcion)
     except KeyboardInterrupt:
         print("\nCorbat cerrado.")

@@ -9,13 +9,19 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from ddgs import DDGS
-
-logging.basicConfig(
-    filename="acciones.log",
-    level=logging.INFO,
-    format="%(asctime)s %(message)s",
-    encoding="utf-8",
+from mensajes import enviar_whatsapp
+from musica import (
+    cancion_actual,
+    cancion_anterior,
+    continuar_musica,
+    pausar_musica,
+    reproducir_me_gusta,
+    reproducir_musica,
+    reproducir_playlist,
+    siguiente_cancion,
 )
+
+import registro  # noqa: F401  (configura acciones.log y los avisos en consola)
 
 # Solo estas aplicaciones se pueden abrir. Agrega las tuyas aquí.
 APLICACIONES = {
@@ -389,5 +395,14 @@ HERRAMIENTAS = {
         silenciar_volumen,
         apagar_equipo,
         buscar_web,
+        reproducir_musica,
+        reproducir_playlist,
+        reproducir_me_gusta,
+        pausar_musica,
+        continuar_musica,
+        siguiente_cancion,
+        cancion_anterior,
+        cancion_actual,
+        enviar_whatsapp,
     )
 }
