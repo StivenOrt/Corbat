@@ -7,7 +7,7 @@ from faster_whisper import WhisperModel
 # "tiny" siempre está cargado (ligero) y solo detecta el nombre.
 # "small" es el preciso: se carga al despertar y se libera al dormir.
 LIGERO = "tiny"
-PRECISO = "small"
+PRECISO = "medium"
 
 # Solo vocabulario: si el prompt trae frases de órdenes, Whisper las "inventa"
 # cuando oye ruido (una silla, un golpe) y Corbat las ejecuta.
