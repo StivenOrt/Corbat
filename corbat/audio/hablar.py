@@ -4,13 +4,13 @@ import subprocess
 import sys
 import threading
 import time
-from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
 
-import indicador
-from activacion import (
+from corbat import rutas
+from corbat.interfaz import indicador
+from corbat.audio.activacion import (
     BLOQUE,
     BLOQUES_PREVIOS,
     DISPOSITIVO,
@@ -19,7 +19,6 @@ from activacion import (
     SILENCIO_FINAL,
 )
 
-SCRIPT_VOZ = Path(__file__).with_name("voz.py")
 BLOQUES_PARA_INTERRUMPIR = 3  # 0.3 segundos seguidos por encima del umbral
 MARGEN_FINAL = 0.2  # segundos extra para no cortar el final de la frase
 SALUDO = "Hola, soy Corbat. Dime oye Corbat para llamarme."
@@ -59,7 +58,8 @@ def _worker():
     with _cerrojo:
         if _proceso is None or _proceso.poll() is not None:
             _proceso = subprocess.Popen(
-                [sys.executable, str(SCRIPT_VOZ)],
+                [sys.executable, "-m", "corbat.audio.voz"],
+                cwd=str(rutas.RAIZ),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 text=True,

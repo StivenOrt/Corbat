@@ -7,9 +7,9 @@ import difflib
 import logging
 import re
 
-import registro  # noqa: F401
-from activacion import capturar_frase, normalizar
-from hablar import hablar
+from corbat import registro  # noqa: F401
+from corbat.audio.activacion import capturar_frase, normalizar
+from corbat.audio.hablar import hablar
 
 ESPERA_RESPUESTA = 8  # segundos que espera tu respuesta
 INTENTOS = 2
@@ -55,7 +55,7 @@ def decible(texto):
 
 def _preguntar(texto):
     """Dice el texto y devuelve lo que respondas ('' si nadie habla)."""
-    from escuchar import transcribir  # se carga aquí para no cargar Whisper al importar
+    from corbat.audio.escuchar import transcribir  # se carga aquí para no cargar Whisper al importar
 
     print(f"[Corbat pregunta: {texto}]")
     audio = hablar(texto, _estado["umbral"], _estado["interrupcion"])

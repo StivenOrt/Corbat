@@ -4,8 +4,8 @@ No hay listas que mantener: se leen del menú Inicio (Get-StartApps), así que f
 igual en cualquier computador con las apps que tenga instaladas.
 
 Uso para revisar:
-    python aplicaciones.py              lista las apps detectadas
-    python aplicaciones.py buscar spotify   muestra qué app entendería Corbat
+    python -m corbat.acciones.aplicaciones              lista las apps detectadas
+    python -m corbat.acciones.aplicaciones buscar spotify   muestra qué app entendería Corbat
 """
 import json
 import logging
@@ -17,8 +17,8 @@ import threading
 import time
 from pathlib import Path
 
-import registro  # noqa: F401
-from activacion import normalizar
+from corbat import registro  # noqa: F401
+from corbat.audio.activacion import normalizar
 
 # Grupos de nombres que significan lo mismo (según el idioma de Windows o cómo lo dicte la voz).
 SINONIMOS = [

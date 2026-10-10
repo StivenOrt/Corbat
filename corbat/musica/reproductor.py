@@ -9,8 +9,8 @@ import unicodedata
 
 from ddgs import DDGS
 
-import registro  # noqa: F401
-import spotify_api
+from corbat import registro  # noqa: F401
+from corbat.musica import spotify_api
 
 VK_SIGUIENTE = 0xB0
 VK_ANTERIOR = 0xB1
@@ -332,7 +332,7 @@ def reproducir_playlist(nombre: str) -> str:
         Resultado de la acción.
     """
     if not spotify_api.configurado():
-        return "Spotify no está conectado. Ejecuta python spotify_api.py una vez."
+        return "Spotify no está conectado. Ejecuta python -m corbat.musica.spotify_api una vez."
     if not nombre.strip():
         return "No me dijiste qué playlist reproducir."
 
@@ -356,7 +356,7 @@ def reproducir_me_gusta() -> str:
         Resultado de la acción.
     """
     if not spotify_api.configurado():
-        return "Spotify no está conectado. Ejecuta python spotify_api.py una vez."
+        return "Spotify no está conectado. Ejecuta python -m corbat.musica.spotify_api una vez."
 
     try:
         try:

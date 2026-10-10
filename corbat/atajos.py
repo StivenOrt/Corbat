@@ -1,7 +1,7 @@
 import re
 from datetime import datetime
 
-from acciones import (
+from corbat.acciones.sistema import (
     _resolver_aplicacion,
     abrir_aplicacion,
     apagar_equipo,
@@ -10,9 +10,9 @@ from acciones import (
     silenciar_volumen,
     subir_volumen,
 )
-from activacion import normalizar
-from mensajes import enviar_whatsapp, llamar_whatsapp
-from musica import (
+from corbat.audio.activacion import normalizar
+from corbat.acciones.mensajes import enviar_whatsapp, llamar_whatsapp
+from corbat.musica.reproductor import (
     cancion_actual,
     cancion_anterior,
     continuar_musica,

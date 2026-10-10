@@ -8,9 +8,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from ddgs import DDGS
-from confirmacion import confirmar
-from mensajes import enviar_whatsapp, llamar_whatsapp
-from musica import (
+from corbat.audio.confirmacion import confirmar
+from corbat.acciones.mensajes import enviar_whatsapp, llamar_whatsapp
+from corbat.musica.reproductor import (
     cancion_actual,
     cancion_anterior,
     continuar_musica,
@@ -21,8 +21,8 @@ from musica import (
     siguiente_cancion,
 )
 
-import aplicaciones
-import registro  # noqa: F401  (configura acciones.log y los avisos en consola)
+from corbat.acciones import aplicaciones
+from corbat import registro  # noqa: F401  (configura acciones.log y los avisos en consola)
 
 EXTENSIONES_PROHIBIDAS = {
     ".exe", ".bat", ".cmd", ".ps1", ".msi", ".vbs", ".js", ".lnk", ".scr", ".com",

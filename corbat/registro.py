@@ -1,6 +1,6 @@
 """Configuración única del registro de Corbat.
 
-Todo lo que Corbat registra queda en acciones.log (junto a este archivo, sin
+Todo lo que Corbat registra queda en datos/acciones.log (sin
 importar desde qué carpeta se ejecute). Los avisos y errores propios también
 se muestran en la consola para no tener que abrir el archivo.
 
@@ -8,9 +8,9 @@ Se configura sola al importarse, así que basta con:  import registro
 """
 import logging
 import sys
-from pathlib import Path
+from corbat import rutas
 
-ARCHIVO_LOG = Path(__file__).with_name("acciones.log")
+ARCHIVO_LOG = rutas.DATOS / "acciones.log"
 
 
 def configurar():

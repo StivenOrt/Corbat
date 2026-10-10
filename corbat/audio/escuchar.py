@@ -8,14 +8,17 @@ from faster_whisper import WhisperModel
 LIGERO = "tiny"
 PRECISO = "small"
 
+# Solo vocabulario: si el prompt trae frases de órdenes, Whisper las "inventa"
+# cuando oye ruido (una silla, un golpe) y Corbat las ejecuta.
 PROMPT = (
-    "Oye Corbat, abre el bloc de notas. Oye Corbat, cierra Spotify. "
-    "Oye Corbat, busca el archivo prueba. Oye Corbat, sube el volumen. "
-    "Oye Corbat, ¿qué hora es? Brave, Discord, WhatsApp, Steam, "
-    "MySQL Workbench, Visual Studio Code. "
-    "Oye Corbat, reproduce algo de Kris R. Reproduce Bobadita en Spotify. "
-    "Pon Virtual Diva de Don Omar."
+    "Spotify, Brave, Discord, WhatsApp, Steam, MySQL Workbench, "
+    "Visual Studio Code, Kris R, Bobadita, Don Omar."
 )
+
+# Un segmento se descarta si Whisper duda de que haya voz o de lo que dijo.
+MAX_SIN_VOZ = 0.5
+MIN_CONFIANZA = -1.0
+MAX_COMPRESION = 2.4
 
 _cerrojo = threading.Lock()
 _modelos = {}
@@ -49,12 +52,19 @@ def _texto(modelo, audio, prompt, **opciones):
         initial_prompt=prompt,
         **opciones,
     )
-    return " ".join(segmento.text.strip() for segmento in segmentos)
+    confiables = [
+        segmento.text.strip()
+        for segmento in segmentos
+        if segmento.no_speech_prob < MAX_SIN_VOZ
+        and segmento.avg_logprob > MIN_CONFIANZA
+        and segmento.compression_ratio < MAX_COMPRESION
+    ]
+    return " ".join(confiables)
 
 
 def detectar(audio):
     """Transcripción rápida y ligera, solo para saber si dijeron 'Corbat'."""
-    return _texto(_modelo(LIGERO), audio, "Oye Corbat.", beam_size=1)
+    return _texto(_modelo(LIGERO), audio, None, beam_size=1)
 
 
 def transcribir(audio):

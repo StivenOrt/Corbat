@@ -12,16 +12,16 @@ if sys.stderr is None:
 
 import ollama
 
-import aplicaciones
-import confirmacion
-import escuchar
-import google_contactos
-import indicador
-import registro  # noqa: F401
-from acciones import HERRAMIENTAS, cancelar_apagado
-from activacion import calibrar_ruido, capturar_frase, extraer_comando, normalizar
-from atajos import intentar_atajo
-from hablar import calibrar_interrupcion, hablar, liberar_voz, precargar_voz
+from corbat.acciones import aplicaciones
+from corbat.audio import confirmacion
+from corbat.audio import escuchar
+from corbat.contactos import google
+from corbat.interfaz import indicador
+from corbat import registro  # noqa: F401
+from corbat.acciones.sistema import HERRAMIENTAS, cancelar_apagado
+from corbat.audio.activacion import calibrar_ruido, capturar_frase, extraer_comando, normalizar
+from corbat.atajos import intentar_atajo
+from corbat.audio.hablar import calibrar_interrupcion, hablar, liberar_voz, precargar_voz
 
 MODELO = "qwen2.5:7b"
 MAX_RONDAS = 3
@@ -164,7 +164,7 @@ def dormir():
 
 def main():
     aplicaciones.precargar()
-    google_contactos.sincronizar_en_segundo_plano()
+    google.sincronizar_en_segundo_plano()
     print("Calibrando ruido ambiente... guarda silencio un momento.")
     umbral = calibrar_ruido()
 

@@ -4,9 +4,9 @@ import os
 import time
 from urllib.parse import quote
 
-import confirmacion
-import contactos
-import registro  # noqa: F401
+from corbat.audio import confirmacion
+from corbat.contactos import agenda
+from corbat import registro  # noqa: F401
 
 ESPERA_VENTANA = 12  # segundos máximos para que WhatsApp quede al frente
 ESPERA_CHAT = 3.5  # segundos para que el chat termine de cargar
@@ -49,13 +49,13 @@ def _esperar_whatsapp() -> bool:
 
 def _elegir_contacto(contacto: str):
     """Devuelve ((nombre, numero), None) o (None, texto de error)."""
-    encontrados = contactos.buscar(contacto)
+    encontrados = agenda.buscar(contacto)
 
     if not encontrados:
-        if not contactos.cargar():
+        if not agenda.cargar():
             return None, (
-                "No tengo contactos. Conecta Google con python google_contactos.py "
-                "o copia un archivo .vcf a la carpeta de Corbat."
+                "No tengo contactos. Conecta Google con python -m corbat.contactos.google "
+                "o copia un archivo .vcf a la carpeta datos."
             )
         return None, f"No encuentro a '{contacto}' entre tus contactos."
 

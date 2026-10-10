@@ -4,9 +4,10 @@ import sys
 import tempfile
 import wave
 import winsound
-from pathlib import Path
 
-MODELO = Path(__file__).with_name("voces") / "es_MX-claude-high.onnx"
+from corbat import rutas
+
+MODELO = rutas.VOCES / "es_MX-claude-high.onnx"
 CARPETA = tempfile.gettempdir()
 
 

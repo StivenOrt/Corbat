@@ -1,15 +1,15 @@
 """Diagnóstico de la conexión de Corbat con Spotify.
 
 Uso:
-    python diagnostico_spotify.py            solo consulta (no cambia la música)
-    python diagnostico_spotify.py --probar   además pausa y reanuda la música
+    python -m corbat.herramientas.diagnostico_spotify            solo consulta (no cambia la música)
+    python -m corbat.herramientas.diagnostico_spotify --probar   además pausa y reanuda la música
 """
 import sys
 import time
 
-import registro  # noqa: F401
-import spotify_api
-from spotify_api import ErrorSpotify
+from corbat import registro  # noqa: F401
+from corbat.musica import spotify_api
+from corbat.musica.spotify_api import ErrorSpotify
 
 SCOPES_NECESARIOS = set(spotify_api.SCOPES.split())
 
@@ -41,7 +41,7 @@ def revisar_archivos():
         if ruta.exists():
             bien(f"{nombre} existe")
         else:
-            mal(f"{nombre} no existe. Ejecuta: python spotify_api.py")
+            mal(f"{nombre} no existe. Ejecuta: python -m corbat.musica.spotify_api")
             todo_bien = False
 
     return todo_bien
@@ -75,7 +75,7 @@ def revisar_sesion():
     faltan = SCOPES_NECESARIOS - concedidos
     if faltan:
         mal("faltan permisos: " + ", ".join(sorted(faltan)))
-        print("          Ejecuta de nuevo: python spotify_api.py")
+        print("          Ejecuta de nuevo: python -m corbat.musica.spotify_api")
         return False
 
     bien("permisos concedidos: " + ", ".join(sorted(concedidos)))

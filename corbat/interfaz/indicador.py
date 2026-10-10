@@ -5,9 +5,8 @@ funcionando igual, solo que sin la bolita.
 """
 import subprocess
 import sys
-from pathlib import Path
 
-SCRIPT_ORBE = Path(__file__).with_name("orbe.py")
+from corbat import rutas
 
 _proceso = None
 _actual = None
@@ -20,7 +19,8 @@ def iniciar():
         return
     try:
         _proceso = subprocess.Popen(
-            [sys.executable, str(SCRIPT_ORBE)],
+            [sys.executable, "-m", "corbat.interfaz.orbe"],
+            cwd=str(rutas.RAIZ),
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

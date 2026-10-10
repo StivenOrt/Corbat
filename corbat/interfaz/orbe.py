@@ -16,7 +16,7 @@ from ctypes import wintypes
 
 import numpy as np
 
-import registro  # noqa: F401
+from corbat import registro  # noqa: F401
 
 TAM = 168  # lado de la ventana, en píxeles
 MARGEN_INFERIOR = 70

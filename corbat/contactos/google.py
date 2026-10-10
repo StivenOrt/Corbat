@@ -1,13 +1,13 @@
 """Sincroniza tus contactos de Google (gratis) para que Corbat los use en WhatsApp.
 
 Configuración, una sola vez (ver los pasos que te dio Claude):
-  1. Descarga el JSON de credenciales de Google Cloud y déjalo en esta carpeta
+  1. Descarga el JSON de credenciales de Google Cloud y déjalo en la carpeta datos
      (se llama client_secret_....json).
-  2. Ejecuta:  python google_contactos.py
+  2. Ejecuta:  python -m corbat.contactos.google
      Se abre el navegador, aceptas, y Corbat guarda una copia local de tus contactos.
 
 Después se actualiza solo (una vez al día al iniciar Corbat) o a mano con:
-     python google_contactos.py sincronizar
+     python -m corbat.contactos.google sincronizar
 """
 import base64
 import hashlib
@@ -19,14 +19,14 @@ import threading
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 
-import registro  # noqa: F401
+from corbat import registro  # noqa: F401
+from corbat import rutas
 
-CARPETA = Path(__file__).parent
+CARPETA = rutas.DATOS
 ARCHIVO_TOKEN = CARPETA / "google_token.json"
 ARCHIVO_CONTACTOS = CARPETA / "google_contactos.json"
 
@@ -46,7 +46,7 @@ class ErrorGoogle(Exception):
 def _credenciales():
     archivos = sorted(CARPETA.glob("client_secret*.json"))
     if not archivos:
-        raise ErrorGoogle("Falta el archivo client_secret....json de Google en la carpeta de Corbat.")
+        raise ErrorGoogle("Falta el archivo client_secret....json de Google en la carpeta datos.")
     try:
         datos = json.loads(archivos[0].read_text(encoding="utf-8"))
         configuracion = datos.get("installed") or datos.get("web") or datos
@@ -140,7 +140,7 @@ def _token_acceso():
     try:
         token = json.loads(ARCHIVO_TOKEN.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
-        raise ErrorGoogle("Google no está conectado. Ejecuta python google_contactos.py una vez.") from error
+        raise ErrorGoogle("Google no está conectado. Ejecuta python -m corbat.contactos.google una vez.") from error
 
     if time.time() < token.get("expira", 0):
         return token["access_token"]
@@ -154,7 +154,7 @@ def _token_acceso():
     }, timeout=15)
     if respuesta.status_code != 200:
         logging.warning("Google: no se pudo renovar el acceso -> %s %s", respuesta.status_code, respuesta.text[:200])
-        raise ErrorGoogle("La sesión de Google venció. Ejecuta python google_contactos.py de nuevo.")
+        raise ErrorGoogle("La sesión de Google venció. Ejecuta python -m corbat.contactos.google de nuevo.")
     return _guardar_token(respuesta.json(), anterior=token)["access_token"]
 
 

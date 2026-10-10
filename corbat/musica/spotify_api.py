@@ -8,14 +8,14 @@ import threading
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 
-import registro  # noqa: F401
+from corbat import registro  # noqa: F401
+from corbat import rutas
 
-CARPETA = Path(__file__).parent
+CARPETA = rutas.DATOS
 ARCHIVO_CONFIG = CARPETA / "spotify_config.json"
 ARCHIVO_TOKEN = CARPETA / "spotify_token.json"
 
@@ -144,7 +144,7 @@ def _cargar_token():
         _cache["token"] = json.loads(ARCHIVO_TOKEN.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         raise ErrorSpotify(
-            "Spotify no está conectado. Ejecuta python spotify_api.py una vez."
+            "Spotify no está conectado. Ejecuta python -m corbat.musica.spotify_api una vez."
         ) from error
     return _cache["token"]
 
@@ -167,7 +167,7 @@ def _renovar():
             respuesta.text[:200],
         )
         raise ErrorSpotify(
-            "No pude renovar la sesión de Spotify. Ejecuta python spotify_api.py de nuevo."
+            "No pude renovar la sesión de Spotify. Ejecuta python -m corbat.musica.spotify_api de nuevo."
         )
 
     datos = respuesta.json()
@@ -495,7 +495,7 @@ def _exigir_permiso(permiso):
     if not tiene_permiso(permiso):
         raise ErrorSpotify(
             "Corbat necesita un permiso nuevo de Spotify. "
-            "Ejecuta python spotify_api.py una vez para volver a conectarlo.",
+            "Ejecuta python -m corbat.musica.spotify_api una vez para volver a conectarlo.",
             403,
         )
 

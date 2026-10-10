@@ -1,16 +1,16 @@
 """Lee tus contactos sin que tengas que escribirlos uno por uno.
 
 Fuentes (todas opcionales, se combinan):
-  - Cualquier archivo .vcf en esta carpeta (exportación de Google Contactos, iPhone, Android...).
-  - Cualquier archivo contactos*.csv en esta carpeta (exportación CSV de Google Contactos).
-  - Tus contactos de Google, sincronizados con google_contactos.py (google_contactos.json).
+  - Cualquier archivo .vcf en la carpeta datos (exportación de Google Contactos, iPhone, Android...).
+  - Cualquier archivo contactos*.csv en la carpeta datos (exportación CSV de Google Contactos).
+  - Tus contactos de Google, sincronizados con corbat.contactos.google (google_contactos.json).
 
 Los archivos se leen cada vez que cambian; no hay que reiniciar Corbat.
 El código de país se toma de la variable CORBAT_CODIGO_PAIS (57 = Colombia por defecto).
 
 Uso para revisar:
-    python contactos.py                 cuántos contactos se leyeron y de dónde
-    python contactos.py buscar Juan     a quién encontraría Corbat
+    python -m corbat.contactos.agenda                 cuántos contactos se leyeron y de dónde
+    python -m corbat.contactos.agenda buscar Juan     a quién encontraría Corbat
 """
 import csv
 import difflib
@@ -20,12 +20,12 @@ import os
 import quopri
 import re
 import sys
-from pathlib import Path
 
-import registro  # noqa: F401
-from activacion import normalizar
+from corbat import registro  # noqa: F401
+from corbat import rutas
+from corbat.audio.activacion import normalizar
 
-CARPETA = Path(__file__).parent
+CARPETA = rutas.DATOS
 ARCHIVO_GOOGLE = CARPETA / "google_contactos.json"
 CODIGO_PAIS = os.environ.get("CORBAT_CODIGO_PAIS", "57")
 
@@ -226,4 +226,4 @@ if __name__ == "__main__":
         for fuente, cantidad in origenes.items():
             print(f" - {fuente}: {cantidad}")
         if not todos:
-            print("Copia un archivo .vcf (o contactos.csv) de tus contactos a esta carpeta.")
+            print("Copia un archivo .vcf (o contactos.csv) de tus contactos a la carpeta datos.")

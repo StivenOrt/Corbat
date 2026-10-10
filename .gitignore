@@ -5,6 +5,7 @@ venv/
 .env
 *.log
 voces/
+datos/
 contactos.json
 spotify_config.json
 spotify_token.json
