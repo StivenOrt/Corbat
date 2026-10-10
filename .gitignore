@@ -8,3 +8,8 @@ voces/
 contactos.json
 spotify_config.json
 spotify_token.json
+*.vcf
+contactos*.csv
+client_secret*.json
+google_token.json
+google_contactos.json
